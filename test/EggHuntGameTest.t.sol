@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.23;
 
-import "forge-std/Test.sol";
+import {Test, console} from "forge-std/Test.sol";
 import "../src/EggstravaganzaNFT.sol";
 import "../src/EggVault.sol";
 import "../src/EggHuntGame.sol";
@@ -229,7 +229,7 @@ contract EggGameTest is Test {
     // -----------------------------------------
     // Additional Edge Cases
     // -----------------------------------------
-    function testGameStatusBeforeStart() public {
+    function testGameStatusBeforeStart() public view{
         // When no game is active, getGameStatus should report accordingly.
         string memory status = game.getGameStatus();
         assertEq(status, "Game is not active");
@@ -256,4 +256,79 @@ contract EggGameTest is Test {
         vm.expectRevert("Egg not in vault");
         vault.withdrawEgg(40);
     }
+
+
+    function test_EndGameBeforeEndTime() public {
+        
+        uint256 current = block.timestamp;
+
+        game.startGame(300);
+        console.log("Game started at:", current);
+        console.log("Game endTime:", game.endTime());
+
+
+        // Check that the game is active and times are set.
+        assertTrue(game.gameActive());
+        assertEq(game.startTime(), current);
+        assertEq(game.endTime(), current + 300);
+
+        // Verify game status while active.
+        string memory status = game.getGameStatus();
+        assertEq(status, "Game is active");
+
+        // Manipulate time to pass but not reach endTime
+        vm.warp(100);
+
+        // End the game.
+        game.endGame();
+        assertFalse(game.gameActive());
+
+        status = game.getGameStatus();
+        assertEq(status, "Game is not active");
+
+
+
+        // Assert that the game was ended prematurely
+        assertFalse(game.gameActive());
+        console.log("Game ended at:", block.timestamp);
+        if (block.timestamp < game.endTime()) {
+            console.log("Game ended before endTime");
+        }
+    }
+
+    function test_Revert_DepositEggToVault_safeTransfer() public {
+        // Mint an egg to Alice
+        vm.prank(address(game));
+        nft.mintEgg(alice, 20);
+
+        // Ensure the NFT is owned by Alice
+        assertEq(nft.ownerOf(20), alice);
+
+        // Attempt to transfer the NFT using safeTransferFrom (should fail)
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(vault)));
+        nft.safeTransferFrom(alice, address(vault), 20);
+    }
+
+    function test_DepositEggToVault_UnsafeTransfer() public {
+        // Mint an egg to Alice
+        vm.prank(address(game));
+        nft.mintEgg(alice, 20);
+
+        // Ensure the NFT is owned by Alice
+        assertEq(nft.ownerOf(20), alice);
+
+        // Alice approves the game to transfer her NFT.
+        vm.prank(alice);
+        nft.approve(address(game), 20);
+        
+
+        // Alice transfers the NFT to the vault using unsafe transfer (should succeed)
+        vm.prank(alice);
+        nft.transferFrom(alice, address(vault), 20);
+    }
+
+
+
+
 }
